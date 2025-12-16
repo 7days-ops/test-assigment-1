@@ -1,0 +1,4 @@
+- name: Pull postgres:15 image from Docker Hub
+  community.docker.docker_image:
+    name: postgres:15
+    source: pull

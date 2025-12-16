@@ -1,0 +1,75 @@
+---
+- name: Install UFW
+  apt:
+    name: ufw
+    state: present
+    update_cache: true
+
+- name: Reset UFW (optional clean start)
+  ufw:
+    state: reset
+
+- name: Deny all incoming, allow all outgoing
+  ufw:
+    direction: "{{ item.direction }}"
+    policy: "{{ item.policy }}"
+  loop:
+    - { direction: incoming, policy: deny }
+    - { direction: outgoing, policy: allow }
+
+- name: Allow essential TCP ports (22, 80, 443)
+  ufw:
+    rule: allow
+    port: "{{ item }}"
+    proto: tcp
+  loop: [22, 80, 443]
+
+- name: Allow UDP port 52
+  ufw:
+    rule: allow
+    port: 52
+    proto: udp
+
+- name: Allow SSH from trusted local machine (192.168.1.122)
+  ufw:
+    rule: allow
+    proto: tcp
+    port: 22
+    from_ip: 192.168.1.122
+
+- name: Enable UFW
+  ufw:
+    state: enabled
+
+- name: Install iptables-persistent (to save rules across reboots)
+  apt:
+    name: iptables-persistent
+    state: present
+    environment:
+      DEBIAN_FRONTEND: noninteractive
+
+- name: Flush DOCKER-USER chain to avoid duplicates
+  iptables:
+    chain: DOCKER-USER
+    flush: true
+
+- name: Block external access to container port 5000
+  iptables:
+    chain: DOCKER-USER
+    action: insert
+    protocol: tcp
+    destination_port: 5000
+    jump: DROP
+
+- name: Allow access to container port 5000 only from Nginx host (192.168.1.137)
+  iptables:
+    chain: DOCKER-USER
+    action: insert
+    protocol: tcp
+    source: 192.168.1.137
+    destination_port: 5000
+    jump: ACCEPT
+
+- name: Persist iptables rules
+  command: netfilter-persistent save
+  changed_when: false

@@ -1,0 +1,8 @@
+- name: Include add user tasks
+  include_tasks: add_user.yml
+
+- name: Include Docker installation
+  include_tasks: download_docker.yml
+
+- name: Configure firewall
+  include_tasks: firewall.yml

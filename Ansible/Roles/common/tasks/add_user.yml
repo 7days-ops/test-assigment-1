@@ -1,0 +1,6 @@
+---
+- name: Add user devops
+  user:
+    name: devops
+    shell: /bin/bash
+    home: /home/devops

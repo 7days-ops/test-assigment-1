@@ -1,0 +1,4 @@
+- name: Pull
+  community.docker.docker_image:
+    name: kirill4goodmopsa/flask-app
+    source: pull

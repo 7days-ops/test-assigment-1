@@ -1,22 +1,25 @@
 #!/bin/bash
 
-# healthcheck.sh - Скрипт мониторинга Flask приложения
+# healthcheck.sh - Скрипт мониторинга Flask приложения в Docker
 # Использование: ./healthcheck.sh
-# Cron setup (каждые 10 минут): */10 * * * * /path/to/Scripts/healthcheck.sh >> /var/log/healthcheck-cron.log 2>&1
+# Cron: */10 * * * * /path/to/Scripts/healthcheck.sh >> /var/log/healthcheck-cron.log 2>&1
 
 set -e
 
-# Конфигурация
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "${SCRIPT_DIR}" && cd .. && pwd)"
 APP_DIR="${PROJECT_ROOT}/flask-auth-example"
+CONTAINER_NAME="flask-application"  # ← Имя вашего контейнера
 
-# Загрузить переменные окружения из .env
+# Загрузка .env
 if [ -f "${APP_DIR}/.env" ]; then
-    export $(grep -v '^#' "${APP_DIR}/.env" | xargs)
+    # Безопасная загрузка (защищает от спецсимволов)
+    set -a
+    source <(grep -v '^#' "${APP_DIR}/.env" | sed 's/ *= */=/g')
+    set +a
 fi
 
-# URL приложения
+# URL приложения (должен быть доступен с хоста)
 APP_URL="http://localhost:5000"
 REGISTER_ENDPOINT="${APP_URL}/register"
 
@@ -25,251 +28,177 @@ LOG_DIR="${SCRIPT_DIR}/logs"
 LOG_FILE="${LOG_DIR}/healthcheck.log"
 ALERT_LOG="${LOG_DIR}/healthcheck_alerts.log"
 
+DISK_THRESHOLD=80
+RESPONSE_TIME_THRESHOLD=5
 
-    DISK_THRESHOLD=80  # Процент использования диска
-    MEMORY_THRESHOLD=80  # Процент использования памяти
-    RESPONSE_TIME_THRESHOLD=5  # Секунды
+mkdir -p "${LOG_DIR}"
 
+log() {
+    local level=$1; shift
+    echo "[$(date '+%Y-%m-%d %H:%M:%S')] [${level}] $*" >> "${LOG_FILE}"
+}
 
-    # Создать директорию для логов
-    mkdir -p "${LOG_DIR}"
-
-    # Функция логирования
-    log() {
-        local level=$1
-        shift
-        local message="$@"
-        local timestamp=$(date '+%Y-%m-%d %H:%M:%S')
-        echo "[${timestamp}] [${level}] ${message}" >> "${LOG_FILE}"
-    }
-
-    # Функция для алертов
-    alert() {
-        local message="$@"
-        local timestamp=$(date '+%Y-%m-%d %H:%M:%S')
-        echo "[${timestamp}] ALERT: ${message}" >> "${ALERT_LOG}"
-
-        # Отправить email если настроен
-        if [ -n "$ALERT_EMAIL" ]; then
-            echo "${message}" | mail -s "Flask App Health Alert" "$ALERT_EMAIL" 2>/dev/null || true
-        fi
-    }
-
-    # Проверка HTTP статуса
-    check_http_status() {
-        log "INFO" "Проверка HTTP статуса..."
-
-        local start_time=$(date +%s)
-        local http_code=$(curl -s -o /dev/null -w "%{http_code}" --max-time 10 "${APP_URL}" 2>/dev/null || echo "000")
-        local end_time=$(date +%s)
-        local response_time=$((end_time - start_time))
-
-        if [ "$http_code" = "200" ] || [ "$http_code" = "302" ]; then
-            log "INFO" "HTTP статус: ${http_code} (OK) - Время ответа: ${response_time}s"
-
-            if [ $response_time -gt $RESPONSE_TIME_THRESHOLD ]; then
-                alert "Медленный ответ сервера: ${response_time}s (порог: ${RESPONSE_TIME_THRESHOLD}s)"
-            fi
-
-            return 0
-        else
-            log "ERROR" "HTTP статус: ${http_code} (FAILED)"
-            alert "Веб-сервер недоступен. HTTP код: ${http_code}"
-            return 1
-        fi
-    }
-
-    # Проверка доступности приложения через /register
-    check_app_endpoint() {
-        log "INFO" "Проверка доступности приложения (/register)..."
-
-        local http_code=$(curl -s -o /dev/null -w "%{http_code}" --max-time 5 "${REGISTER_ENDPOINT}" 2>/dev/null || echo "000")
-
-        if [ "$http_code" = "200" ]; then
-            log "INFO" "Приложение доступно: /register вернул HTTP ${http_code}"
-            return 0
-        else
-            log "ERROR" "Приложение недоступно: /register вернул HTTP ${http_code}"
-            alert "Эндпоинт /register недоступен. HTTP код: ${http_code}"
-            return 1
-        fi
-    }
-
-    # Проверка Docker контейнера
-    check_app_process() {
-        log "INFO" "Проверка процесса приложения..."
-
-        # Проверка наличия gunicorn процесса
-        if pgrep -f "gunicorn.*main:app" > /dev/null; then
-            local pid=$(pgrep -f "gunicorn.*main:app" | head -1)
-            log "INFO" "Процесс приложения запущен (PID: ${pid})"
-
-            # Проверка использования памяти процессом
-            if command -v ps &> /dev/null; then
-                local mem_usage=$(ps -p "$pid" -o %mem --no-headers 2>/dev/null | tr -d ' ')
-                if [ -n "$mem_usage" ]; then
-                    log "INFO" "Использование памяти процессом: ${mem_usage}%"
-                fi
-            fi
-
-            return 0
-        else
-            log "ERROR" "Процесс приложения не найден"
-            alert "Flask приложение не запущено"
-            return 1
-        fi
-    }
+alert() {
+    local msg="$*"
+    echo "[$(date '+%Y-%m-%d %H:%M:%S')] ALERT: ${msg}" >> "${ALERT_LOG}"
+    if [ -n "${ALERT_EMAIL:-}" ]; then
+        echo "$msg" | mail -s "Flask App Health Alert" "$ALERT_EMAIL" 2>/dev/null || true
+    fi
+}
 
 
-    check_database() {
-        log "INFO" "Проверка подключения к базе данных PostgreSQL..."
+check_docker_container() {
+    log "INFO" "Проверка состояния Docker-контейнера '${CONTAINER_NAME}'..."
 
-        # Проверка наличия переменных окружения
-        if [ -z "$DB_HOST" ] || [ -z "$DB_USER" ] || [ -z "$DB_NAME" ]; then
-            log "ERROR" "Переменные окружения БД не установлены"
-            alert "Отсутствуют переменные окружения для подключения к PostgreSQL"
-            return 1
-        fi
+    if ! command -v docker &> /dev/null; then
+        log "ERROR" "Docker не установлен на хосте"
+        alert "Docker не найден — невозможно проверить контейнер"
+        return 1
+    fi
 
-        # Проверка доступности PostgreSQL
-        if command -v psql &> /dev/null; then
-            local db_check=$(PGPASSWORD="$DB_PASSWORD" psql -h "$DB_HOST" -p "${DB_PORT:-5432}" -U "$DB_USER" -d "$DB_NAME" -c "SELECT 1;" -t 2>&1)
-
-            if [ $? -eq 0 ]; then
-                log "INFO" "База данных PostgreSQL: OK (${DB_HOST}:${DB_PORT:-5432}/${DB_NAME})"
-
-                # Проверка количества подключений
-                local conn_count=$(PGPASSWORD="$DB_PASSWORD" psql -h "$DB_HOST" -p "${DB_PORT:-5432}" -U "$DB_USER" -d "$DB_NAME" \
-                    -c "SELECT count(*) FROM pg_stat_activity WHERE datname='${DB_NAME}';" -t 2>/dev/null | tr -d ' ')
-
-                if [ -n "$conn_count" ]; then
-                    log "INFO" "Активных подключений к БД: ${conn_count}"
-                fi
-
-                return 0
-            else
-                log "ERROR" "Не удалось подключиться к PostgreSQL: ${db_check}"
-                alert "Ошибка подключения к PostgreSQL: ${DB_HOST}:${DB_PORT:-5432}"
-                return 1
-            fi
-        else
-            log "WARNING" "psql не установлен, проверка БД пропущена"
-            return 0
-        fi
-    }
-
-
-    check_disk_space() {
-        log "INFO" "Проверка дискового пространства..."
-
-        local disk_usage=$(df -h / | awk 'NR==2 {print $5}' | sed 's/%//')
-
-        log "INFO" "Использование диска: ${disk_usage}%"
-
-        if [ "$disk_usage" -gt "$DISK_THRESHOLD" ]; then
-            log "WARNING" "Высокое использование диска: ${disk_usage}%"
-            alert "Критическое использование диска: ${disk_usage}% (порог: ${DISK_THRESHOLD}%)"
-            return 1
-        fi
-
+    if docker ps -f "name=${CONTAINER_NAME}" -f "status=running" --format '{{.Names}}' | grep -q "^${CONTAINER_NAME}$"; then
+        local id=$(docker inspect --format='{{.Id}}' "${CONTAINER_NAME}" 2>/dev/null | cut -c1-12)
+        log "INFO" "Контейнер запущен (ID: ${id})"
         return 0
-    }
+    else
+        log "ERROR" "Контейнер '${CONTAINER_NAME}' не запущен или не существует"
+        alert "Docker-контейнер '${CONTAINER_NAME}' не активен"
+        return 1
+    fi
+}
 
+# Проверка HTTP (без изменений — работает, если порт проброшен)
+check_http_status() {
+    log "INFO" "Проверка HTTP статуса (${APP_URL})..."
+    local start_time=$(date +%s)
+    local http_code=$(curl -s -o /dev/null -w "%{http_code}" --max-time 10 "${APP_URL}" 2>/dev/null || echo "000")
+    local end_time=$(date +%s)
+    local response_time=$((end_time - start_time))
 
-    check_logs() {
-        log "INFO" "Проверка логов приложения на критические ошибки..."
-
-        # Проверка логов приложения, если они существуют
-        local app_log="${APP_DIR}/logs/app.log"
-
-        if [ -f "$app_log" ]; then
-            local error_count=$(tail -100 "$app_log" 2>/dev/null | grep -i "error\|critical\|exception" | wc -l || echo "0")
-
-            if [ "$error_count" -gt 10 ]; then
-                log "WARNING" "Обнаружено ${error_count} ошибок в логах за последнее время"
-                alert "Большое количество ошибок в логах: ${error_count}"
-            else
-                log "INFO" "Ошибок в логах: ${error_count}"
-            fi
-        else
-            log "INFO" "Лог файл приложения не найден, пропускаю проверку"
+    if [[ "$http_code" == "200" || "$http_code" == "302" ]]; then
+        log "INFO" "HTTP: ${http_code} (OK), время: ${response_time}s"
+        if (( response_time > RESPONSE_TIME_THRESHOLD )); then
+            alert "Медленный ответ: ${response_time}s (порог: ${RESPONSE_TIME_THRESHOLD}s)"
         fi
-    }
+        return 0
+    else
+        log "ERROR" "HTTP: ${http_code} (FAILED)"
+        alert "Веб-сервер недоступен. HTTP код: ${http_code}"
+        return 1
+    fi
+}
 
+check_app_endpoint() {
+    log "INFO" "Проверка эндпоинта /register..."
+    local http_code=$(curl -s -o /dev/null -w "%{http_code}" --max-time 5 "${REGISTER_ENDPOINT}" 2>/dev/null || echo "000")
+    if [ "$http_code" = "200" ]; then
+        log "INFO" "/register доступен (HTTP ${http_code})"
+        return 0
+    else
+        log "ERROR" "/register недоступен (HTTP ${http_code})"
+        alert "Эндпоинт /register недоступен. HTTP код: ${http_code}"
+        return 1
+    fi
+}
 
-    check_systemd_service() {
-        log "INFO" "Проверка systemd сервиса..."
+# Проверка БД — без изменений (если БД на хосте или в отдельном контейнере с пробросом порта)
+check_database() {
+    log "INFO" "Проверка подключения к PostgreSQL..."
+    if [ -z "${DB_HOST:-}" ] || [ -z "${DB_USER:-}" ] || [ -z "${DB_NAME:-}" ]; then
+        log "ERROR" "Переменные БД не заданы"
+        alert "Не заданы переменные окружения PostgreSQL"
+        return 1
+    fi
 
-        # Проверка наличия systemd сервиса
-        if systemctl list-units --type=service --all | grep -q "flask-app.service"; then
-            if systemctl is-active --quiet flask-app; then
-                log "INFO" "Сервис flask-app: active"
-                return 0
-            else
-                log "WARNING" "Сервис flask-app: inactive"
-                return 1
-            fi
-        else
-            log "INFO" "Systemd сервис flask-app не настроен (опционально)"
+    if command -v psql &> /dev/null; then
+        local out=$(PGPASSWORD="${DB_PASSWORD:-}" psql -h "${DB_HOST}" -p "${DB_PORT:-5432}" -U "${DB_USER}" -d "${DB_NAME}" -c "SELECT 1;" -t 2>&1)
+        if [ $? -eq 0 ]; then
+            log "INFO" "PostgreSQL: OK (${DB_HOST}:${DB_PORT:-5432})"
             return 0
-        fi
-    }
-
-
-    generate_report() {
-        local status=$1
-        local timestamp=$(date '+%Y-%m-%d %H:%M:%S')
-
-        cat <<EOF
-
-    ========================================
-    Flask Application Health Check Report
-    ========================================
-    Время проверки: ${timestamp}
-    Общий статус: ${status}
-    ========================================
-
-    EOF
-    }
-
-
-    main() {
-        log "INFO" "========== Начало проверки здоровья =========="
-
-        local all_checks_passed=true
-        local failed_checks=()
-
-
-        check_systemd_service || { all_checks_passed=false; failed_checks+=("systemd_service"); }
-        sleep 1
-
-        check_app_process || { all_checks_passed=false; failed_checks+=("app_process"); }
-        sleep 1
-
-        check_http_status || { all_checks_passed=false; failed_checks+=("http_status"); }
-        sleep 1
-
-        check_app_endpoint || { all_checks_passed=false; failed_checks+=("app_endpoint"); }
-        sleep 1
-
-        check_database || { all_checks_passed=false; failed_checks+=("database"); }
-
-        check_disk_space || { all_checks_passed=false; failed_checks+=("disk_space"); }
-
-        check_logs
-
-
-        if [ "$all_checks_passed" = true ]; then
-            log "INFO" "Все проверки пройдены успешно ✓"
-            generate_report "HEALTHY" >> "${LOG_FILE}"
-            exit 0
         else
-            log "ERROR" "Некоторые проверки не прошли: ${failed_checks[*]}"
-            generate_report "UNHEALTHY" >> "${LOG_FILE}"
-            alert "Healthcheck failed. Проваленные проверки: ${failed_checks[*]}"
-            exit 1
+            log "ERROR" "PostgreSQL ошибка: $out"
+            alert "Не удалось подключиться к PostgreSQL"
+            return 1
         fi
-    }
+    else
+        log "WARNING" "psql не установлен, проверка БД пропущена"
+        return 0
+    fi
+}
 
-    # Запуск
-    main "$@"
+check_disk_space() {
+    local usage=$(df / --output=pcent | tail -1 | tr -d ' %')
+    log "INFO" "Использование диска: ${usage}%"
+    if (( usage > DISK_THRESHOLD )); then
+        log "WARNING" "Высокое использование диска: ${usage}%"
+        alert "Диск заполнен на ${usage}% (порог: ${DISK_THRESHOLD}%)"
+        return 1
+    fi
+    return 0
+}
+
+# Логи: если логи монтируются на хост — ок, иначе пропустить
+check_logs() {
+    local app_log="${APP_DIR}/logs/app.log"
+    if [ -f "$app_log" ]; then
+        local errors=$(tail -100 "$app_log" 2>/dev/null | grep -i -c "error\|critical\|exception" || echo 0)
+        log "INFO" "Ошибок в логах: ${errors}"
+        if (( errors > 10 )); then
+            alert "Обнаружено ${errors} ошибок в логах"
+        fi
+    else
+        log "INFO" "Лог-файл не найден (возможно, не смонтирован из контейнера)"
+    fi
+}
+
+
+
+
+generate_report() {
+    local status=$1
+    local ts=$(date '+%Y-%m-%d %H:%M:%S')
+    cat <<EOF
+
+========================================
+Flask Application Health Check Report
+========================================
+Время проверки: ${ts}
+Общий статус: ${status}
+========================================
+
+EOF
+}
+
+main() {
+    log "INFO" "========== Начало проверки здоровья (Docker-режим) =========="
+
+    local all_ok=true
+    local fails=()
+
+
+    check_docker_container || { all_ok=false; fails+=("docker_container"); }
+    sleep 1
+
+    check_http_status || { all_ok=false; fails+=("http_status"); }
+    sleep 1
+
+    check_app_endpoint || { all_ok=false; fails+=("app_endpoint"); }
+    sleep 1
+
+    check_database || { all_ok=false; fails+=("database"); }
+    check_disk_space || { all_ok=false; fails+=("disk_space"); }
+    check_logs
+
+    if [ "$all_ok" = true ]; then
+        log "INFO" "Все проверки пройдены успешно ✓"
+        generate_report "HEALTHY" >> "${LOG_FILE}"
+        exit 0
+    else
+        log "ERROR" "Проваленные проверки: ${fails[*]}"
+        generate_report "UNHEALTHY" >> "${LOG_FILE}"
+        alert "Healthcheck failed. Провалено: ${fails[*]}"
+        exit 1
+    fi
+}
+
+main "$@"
