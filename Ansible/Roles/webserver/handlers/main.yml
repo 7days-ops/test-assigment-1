@@ -1,0 +1,10 @@
+---
+- name: restart nginx
+  community.docker.docker_container:
+    name: nginx
+    state: started
+    restart: true
+
+- name: test nginx config
+  command: nginx -t
+  changed_when: false

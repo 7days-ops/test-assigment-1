@@ -1,0 +1,49 @@
+---
+- name: Deploy/Update application
+  hosts: vm1
+  become: true
+  gather_facts: true
+  
+  tasks:
+    - name: Pull latest application image
+      community.docker.docker_image:
+        name: "{{ app_docker_image | default('kirill4goodmopsa/flask-app') }}"
+        source: pull
+        force_source: true
+      notify: restart application
+
+    - name: Stop existing container
+      community.docker.docker_container:
+        name: flask-app
+        state: stopped
+      ignore_errors: true
+
+    - name: Remove existing container
+      community.docker.docker_container:
+        name: flask-app
+        state: absent
+      ignore_errors: true
+
+    - name: Run updated Flask application container
+      community.docker.docker_container:
+        name: flask-app
+        image: "{{ app_docker_image | default('kirill4goodmopsa/flask-app') }}"
+        state: started
+        restart_policy: always
+        env:
+          DB_USER: "{{ db_user }}"
+          DB_PASSWORD: "{{ db_password }}"
+          DB_HOST: "{{ db_host }}"
+          DB_PORT: "{{ db_port | default('5432') }}"
+          DB_NAME: "{{ db_name }}"
+        ports:
+          - "{{ app_port }}:5000"
+        networks:
+          - name: bridge
+
+  handlers:
+    - name: restart application
+      community.docker.docker_container:
+        name: flask-app
+        state: started
+        restart: true

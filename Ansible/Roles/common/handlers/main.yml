@@ -1,0 +1,9 @@
+---
+- name: restart docker
+  systemd:
+    name: docker
+    state: restarted
+
+- name: reload ufw
+  ufw:
+    state: reloaded

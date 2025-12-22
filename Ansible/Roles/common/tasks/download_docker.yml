@@ -1,19 +1,52 @@
+---
+- name: Update apt cache
+  apt:
+    update_cache: true
+    cache_valid_time: 3600
+
+- name: Install required packages
+  apt:
+    name:
+      - apt-transport-https
+      - ca-certificates
+      - curl
+      - gnupg
+      - lsb-release
+      - python3-pip
+    state: present
+
 - name: Add Docker GPG apt Key
   apt_key:
     url: https://download.docker.com/linux/ubuntu/gpg
     state: present
 
+- name: Get Ubuntu codename
+  command: lsb_release -cs
+  register: ubuntu_codename
+  changed_when: false
+
 - name: Add Docker Repository
   apt_repository:
-    repo: deb https://download.docker.com/linux/ubuntu focal stable
+    repo: "deb https://download.docker.com/linux/ubuntu {{ ubuntu_codename.stdout }} stable"
     state: present
-
-- name: Update apt and install docker-ce
-  apt:
-    name: docker-ce
-    state: latest
     update_cache: true
 
-- name: Install Docker Module for Python
-  pip:
+- name: Install docker-ce
+  apt:
+    name:
+      - docker-ce
+      - docker-ce-cli
+      - containerd.io
+    state: present
+  notify: restart docker
+
+- name: Ensure Docker service is started and enabled
+  systemd:
     name: docker
+    state: started
+    enabled: true
+
+- name: Install Docker Module for Python
+  apt:
+    name: python3-docker
+    state: present

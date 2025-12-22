@@ -1,0 +1,13 @@
+#!/bin/bash
+# Cleanup old log files
+# Managed by Ansible
+
+LOGDIR="{{ log_directory }}"
+RETENTION_DAYS={{ log_retention_days }}
+
+# Remove logs older than retention period
+find "$LOGDIR" -name "*.log" -type f -mtime +$RETENTION_DAYS -delete
+find "$LOGDIR" -name "*.log.gz" -type f -mtime +$RETENTION_DAYS -delete
+
+# Log cleanup action
+echo "$(date '+%Y-%m-%d %H:%M:%S') - Cleaned up logs older than $RETENTION_DAYS days" >> "$LOGDIR/cleanup.log"

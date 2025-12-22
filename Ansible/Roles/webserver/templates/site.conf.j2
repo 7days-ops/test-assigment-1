@@ -1,0 +1,85 @@
+# Flask Application - Nginx Site Configuration
+# Managed by Ansible
+# Nginx on VM2 proxies to Flask app on VM1
+
+upstream flask_app {
+    server {{ flask_app_host }}:{{ app_port }};
+    keepalive 32;
+}
+
+# HTTP server - redirect to HTTPS
+server {
+    listen {{ nginx_http_port | default(80) }} default_server;
+    listen [::]:{{ nginx_http_port | default(80) }} default_server;
+    
+    server_name {{ nginx_server_name | default('_') }};
+    
+    # Redirect all HTTP to HTTPS
+    return 301 https://$host$request_uri;
+}
+
+# HTTPS server
+server {
+    listen {{ nginx_https_port | default(443) }} ssl default_server;
+    listen [::]:{{ nginx_https_port | default(443) }} ssl default_server;
+    http2 on;
+    
+    server_name {{ nginx_server_name | default('_') }};
+    
+    # SSL certificates
+    ssl_certificate {{ nginx_ssl_cert_path }};
+    ssl_certificate_key {{ nginx_ssl_key_path }};
+    
+    # SSL settings
+    ssl_protocols TLSv1.2 TLSv1.3;
+    ssl_ciphers HIGH:!aNULL:!MD5;
+    ssl_prefer_server_ciphers off;
+    ssl_session_cache shared:SSL:10m;
+    ssl_session_timeout 10m;
+    
+    # Logging
+    access_log /var/log/nginx/flask-app-access.log;
+    error_log /var/log/nginx/flask-app-error.log;
+    
+    # Security headers
+    add_header X-Frame-Options "SAMEORIGIN" always;
+    add_header X-Content-Type-Options "nosniff" always;
+    add_header X-XSS-Protection "1; mode=block" always;
+    add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
+    
+    # Client body size limit
+    client_max_body_size {{ nginx_client_max_body_size | default('10M') }};
+    
+    location / {
+        proxy_pass http://flask_app;
+        proxy_redirect off;
+        
+        # Cache settings
+        proxy_cache_bypass $http_cache_control;
+        proxy_cache_valid 200 302 10m;
+        proxy_cache_valid 404 1m;
+        proxy_cache my_cache;
+        add_header X-Cache-Status $upstream_cache_status;
+        
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        
+        # Timeouts
+        proxy_connect_timeout 60s;
+        proxy_send_timeout 60s;
+        proxy_read_timeout 60s;
+        
+        # Connection settings
+        proxy_http_version 1.1;
+        proxy_set_header Connection "";
+    }
+    
+    # Deny access to hidden files
+    location ~ /\. {
+        deny all;
+        access_log off;
+        log_not_found off;
+    }
+}

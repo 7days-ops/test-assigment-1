@@ -1,0 +1,13 @@
+---
+# PostgreSQL version
+postgres_version: "15"
+
+# PostgreSQL performance tuning
+postgres_max_connections: 100
+postgres_shared_buffers: "128MB"
+postgres_effective_cache_size: "4GB"
+postgres_work_mem: "4MB"
+postgres_maintenance_work_mem: "64MB"
+
+# Application server IP (for pg_hba.conf)
+app_server_ip: "192.168.1.0/24"

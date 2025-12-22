@@ -1,0 +1,6 @@
+---
+- name: restart application
+  community.docker.docker_container:
+    name: flask-app
+    state: started
+    restart: true

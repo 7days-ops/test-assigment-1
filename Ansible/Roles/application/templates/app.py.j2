@@ -1,0 +1,43 @@
+#!/usr/bin/env python3
+"""
+Flask Application
+Managed by Ansible
+"""
+from flask import Flask, jsonify
+import os
+
+app = Flask(__name__)
+
+# Configuration from environment
+DB_HOST = os.getenv('DB_HOST', '{{ hostvars["vm2"]["ansible_host"] }}')
+DB_NAME = os.getenv('DB_NAME', '{{ db_name }}')
+DB_USER = os.getenv('DB_USER', '{{ db_user }}')
+DB_PASSWORD = os.getenv('DB_PASSWORD', '{{ db_password }}')
+APP_PORT = int(os.getenv('APP_PORT', '{{ app_port }}'))
+
+@app.route('/')
+def home():
+    return jsonify({
+        'status': 'ok',
+        'message': 'Flask application is running',
+        'version': '1.0'
+    })
+
+@app.route('/health')
+def health():
+    return jsonify({
+        'status': 'healthy',
+        'database': DB_HOST
+    })
+
+@app.route('/info')
+def info():
+    return jsonify({
+        'app': 'Flask Application',
+        'db_host': DB_HOST,
+        'db_name': DB_NAME,
+        'port': APP_PORT
+    })
+
+if __name__ == '__main__':
+    app.run(host='0.0.0.0', port=APP_PORT, debug=False)

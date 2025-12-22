@@ -1,0 +1,11 @@
+---
+
+nginx_worker_processes: "auto"
+nginx_worker_connections: 1024
+nginx_port: 443
+nginx_server_name: "_"
+nginx_client_max_body_size: "10M"
+
+
+app_port: 5000
+app_directory: "/opt/flask-app"

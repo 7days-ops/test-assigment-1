@@ -1,0 +1,22 @@
+---
+all:
+  children:
+    vms:
+      hosts:
+        vm1:
+          ansible_host: 192.168.1.186
+          ansible_user: devops
+          ansible_ssh_private_key_file: /Users/kirylputseyeu/.ssh/server.key
+          server_role: appanddb
+          server_hostname: vm1.local
+          
+        vm2:
+          ansible_host: 192.168.1.187
+          ansible_user: devops
+          ansible_ssh_private_key_file: /Users/kirylputseyeu/.ssh/server.key
+          server_role: webserver
+          server_hostname: vm2.local
+  
+  vars:
+    ansible_python_interpreter: /usr/bin/python3
+    ansible_ssh_common_args: "-o StrictHostKeyChecking=no"

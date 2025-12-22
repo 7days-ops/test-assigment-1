@@ -1,0 +1,20 @@
+---
+# Default user settings
+devops_user: "devops"
+devops_user_shell: "/bin/bash"
+devops_user_groups: []
+
+# Firewall settings
+firewall_allowed_ports:
+  - { port: 22, proto: tcp }
+  - { port: 80, proto: tcp }
+  - { port: 443, proto: tcp }
+  - { port: 53, proto: udp }
+
+# System packages to install
+system_packages:
+  - vim
+  - git
+  - htop
+  - curl
+  - wget

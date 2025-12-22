@@ -1,2 +1,7 @@
-- name: Download Postgres
+- name: Build Flask application from Dockerfile
+  include_tasks: build_app.yml
+  when: app_build_mode | default('build') == 'build'
+
+- name: Download Flask application from Docker Hub
   include_tasks: download_app.yml
+  when: app_build_mode | default('build') == 'download'

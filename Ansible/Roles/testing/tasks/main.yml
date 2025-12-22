@@ -1,0 +1,44 @@
+---
+# Testing role - main tasks
+- name: Copy deployment test script
+  template:
+    src: deployment_test.sh.j2
+    dest: /usr/local/bin/deployment_test.sh
+    mode: '0755'
+    owner: root
+    group: root
+
+- name: Copy backup test script
+  template:
+    src: backup_test.sh.j2
+    dest: /usr/local/bin/backup_test.sh
+    mode: '0755'
+    owner: root
+    group: root
+
+- name: Copy manual checklist
+  template:
+    src: manual_checklist.md.j2
+    dest: /root/deployment_checklist.md
+    mode: '0644'
+    owner: root
+    group: root
+
+- name: Create test results directory
+  file:
+    path: /var/log/deployment_tests
+    state: directory
+    mode: '0755'
+    owner: root
+    group: root
+
+- name: Run deployment tests
+  shell: /usr/local/bin/deployment_test.sh
+  register: test_results
+  changed_when: false
+  failed_when: false
+
+- name: Display test results
+  debug:
+    var: test_results.stdout_lines
+  when: test_results.stdout_lines is defined

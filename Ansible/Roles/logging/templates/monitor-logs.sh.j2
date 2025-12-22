@@ -1,0 +1,52 @@
+#!/bin/bash
+# Monitor application logs for errors
+# Managed by Ansible
+
+LOGDIR="{{ log_directory }}"
+DATE=$(date +%Y-%m-%d)
+
+echo "=== Log Monitoring Report - $(date) ==="
+echo ""
+
+# Check Docker container status
+echo "=== Container Status ==="
+docker ps --format "table {% raw %}{{.Names}}{% endraw %}\t{% raw %}{{.Status}}{% endraw %}\t{% raw %}{{.Ports}}{% endraw %}"
+echo ""
+
+# Check recent Flask app logs for errors
+echo "=== Flask App Recent Errors ==="
+if docker ps | grep -q flask-app; then
+    docker logs flask-app --tail 50 2>&1 | grep -iE "error|exception|traceback|critical" | tail -10
+else
+    echo "Flask app container not running"
+fi
+echo ""
+
+# Check PostgreSQL logs for errors
+echo "=== PostgreSQL Recent Errors ==="
+if docker ps | grep -q postgres; then
+    docker logs postgres --tail 50 2>&1 | grep -iE "error|fatal|panic" | tail -10
+else
+    echo "PostgreSQL container not running"
+fi
+echo ""
+
+# Check Nginx logs for errors (if on webserver)
+if docker ps | grep -q nginx; then
+    echo "=== Nginx Recent Errors ==="
+    docker logs nginx --tail 50 2>&1 | grep -iE "error|warn" | tail -10
+    echo ""
+elif [ -f /opt/nginx/logs/error.log ]; then
+    echo "=== Nginx Recent Errors ==="
+    tail -20 /opt/nginx/logs/error.log
+    echo ""
+fi
+
+# Disk space check
+echo "=== Disk Space Usage ==="
+df -h "$LOGDIR" | tail -1
+echo ""
+
+# Log files summary
+echo "=== Log Files in $LOGDIR ==="
+ls -lh "$LOGDIR" 2>/dev/null | tail -10

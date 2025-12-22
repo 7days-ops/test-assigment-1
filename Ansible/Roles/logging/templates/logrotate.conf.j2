@@ -1,0 +1,12 @@
+{{ log_directory }}/*.log {
+    daily
+    rotate {{ log_retention_days }}
+    compress
+    delaycompress
+    missingok
+    notifempty
+    create 0644 root root
+    dateext
+    dateformat -%Y-%m-%d
+    maxage {{ log_retention_days }}
+}

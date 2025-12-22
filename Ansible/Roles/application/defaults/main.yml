@@ -1,0 +1,13 @@
+---
+# Application settings (inherited from group_vars but can be overridden)
+app_directory: "/opt/flask-app"
+app_build_directory: "/tmp/flask-app-build"
+app_virtualenv: "/opt/flask-app/venv"
+app_user: "appuser"
+app_port: 5000
+app_docker_tag: "latest"
+app_build_mode: "download"  # Options: 'build' or 'download'
+
+# Optional: Git repository settings if deploying from git
+# app_git_repo: "https://github.com/user/flask-app.git"
+# app_git_branch: "main"

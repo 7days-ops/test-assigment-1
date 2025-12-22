@@ -1,0 +1,61 @@
+---
+- name: Create application directory for build context
+  file:
+    path: "{{ app_build_directory }}"
+    state: directory
+    mode: '0755'
+
+- name: Copy Dockerfile to build directory
+  copy:
+    src: Dockerfile
+    dest: "{{ app_build_directory }}/Dockerfile"
+    mode: '0644'
+
+- name: Copy requirements.txt to build directory
+  copy:
+    src: requirements.txt
+    dest: "{{ app_build_directory }}/requirements.txt"
+    mode: '0644'
+
+- name: Build Docker image from Dockerfile
+  community.docker.docker_image:
+    name: "{{ app_docker_image | default('flask-app') }}"
+    tag: "{{ app_docker_tag | default('latest') }}"
+    source: build
+    build:
+      path: "{{ app_build_directory }}"
+      pull: yes
+    force_source: yes
+    state: present
+
+- name: Create application directory for data
+  file:
+    path: "{{ app_directory }}"
+    state: directory
+    mode: '0755'
+
+
+- name: Run Flask application container
+  community.docker.docker_container:
+    name: flask-app
+    image: "{{ app_docker_image | default('flask-app') }}:{{ app_docker_tag | default('latest') }}"
+    state: started
+    restart_policy: always
+    env:
+      DB_USER: "{{ db_user }}"
+      DB_PASSWORD: "{{ db_password }}"
+      DB_HOST: "{{ db_host }}"
+      DB_PORT: "{{ db_port | default('5432') | string }}"
+      DB_NAME: "{{ db_name }}"
+    ports:
+      - "{{ app_port }}:5000"
+    networks:
+      - name: bridge
+  notify: restart application
+
+- name: Wait for Flask application to be ready
+  wait_for:
+    host: localhost
+    port: "{{ app_port }}"
+    delay: 3
+    timeout: 30

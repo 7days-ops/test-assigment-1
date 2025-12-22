@@ -1,4 +1,87 @@
+---
+- name: Create Docker network for application
+  community.docker.docker_network:
+    name: app_network
+    state: present
+
 - name: Pull postgres:15 image from Docker Hub
   community.docker.docker_image:
     name: postgres:15
     source: pull
+
+- name: Create PostgreSQL data directory
+  file:
+    path: /var/lib/postgresql/data
+    state: directory
+    owner: "999"
+    group: "999"
+    mode: '0700'
+
+- name: Run PostgreSQL container
+  community.docker.docker_container:
+    name: postgres
+    image: postgres:15
+    state: started
+    restart_policy: always
+    env:
+      POSTGRES_PASSWORD: "{{ postgres_admin_password }}"
+      POSTGRES_DB: "{{ db_name }}"
+      POSTGRES_USER: "postgres"
+    ports:
+      - "5432:5432"
+    volumes:
+      - "/var/lib/postgresql/data:/var/lib/postgresql/data"
+    networks:
+      - name: app_network
+  notify: restart postgresql
+
+- name: Wait for PostgreSQL to be ready
+  wait_for:
+    host: localhost
+    port: 5432
+    delay: 5
+    timeout: 60
+
+- name: Install psycopg2 for Ansible PostgreSQL modules
+  ansible.builtin.apt:
+    name: python3-psycopg2
+    state: present
+
+- name: Create application database
+  community.postgresql.postgresql_db:
+    name: "{{ db_name }}"
+    login_host: localhost
+    login_user: postgres
+    login_password: "{{ postgres_admin_password }}"
+    state: present
+
+- name: Create application database user
+  community.postgresql.postgresql_user:
+    name: "{{ db_user }}"
+    password: "{{ db_password }}"
+    db: "{{ db_name }}"
+    login_host: localhost
+    login_user: postgres
+    login_password: "{{ postgres_admin_password }}"
+    state: present
+
+- name: Grant privileges to application user
+  community.postgresql.postgresql_privs:
+    database: "{{ db_name }}"
+    roles: "{{ db_user }}"
+    privs: ALL
+    type: database
+    login_host: localhost
+    login_user: postgres
+    login_password: "{{ postgres_admin_password }}"
+
+- name: Grant schema privileges to application user
+  community.postgresql.postgresql_privs:
+    database: "{{ db_name }}"
+    roles: "{{ db_user }}"
+    privs: ALL
+    type: schema
+    objs: public
+    login_host: localhost
+    login_user: postgres
+    login_password: "{{ postgres_admin_password }}"

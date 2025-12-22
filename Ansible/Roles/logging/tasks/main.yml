@@ -1,0 +1,76 @@
+---
+- name: Ensure cron is installed
+  ansible.builtin.package:
+    name: cron
+    state: present
+- name: Create log directory
+  file:
+    path: "{{ log_directory }}"
+    state: directory
+    owner: root
+    group: root
+    mode: '0755'
+
+- name: Copy log rotation script
+  template:
+    src: logrotate.conf.j2
+    dest: /etc/logrotate.d/app-logs
+    owner: root
+    group: root
+    mode: '0644'
+
+- name: Copy log cleanup script
+  template:
+    src: cleanup-logs.sh.j2
+    dest: /usr/local/bin/cleanup-logs.sh
+    owner: root
+    group: root
+    mode: '0755'
+
+- name: Create cron job for log cleanup
+  cron:
+    name: "Cleanup old application logs"
+    minute: "0"
+    hour: "2"
+    job: "/usr/local/bin/cleanup-logs.sh"
+    user: root
+
+- name: Copy log monitoring script
+  template:
+    src: monitor-logs.sh.j2
+    dest: /usr/local/bin/monitor-logs.sh
+    owner: root
+    group: root
+    mode: '0755'
+
+- name: Create systemd log service for Docker containers
+  copy:
+    dest: /usr/local/bin/docker-logs-export.sh
+    content: |
+      #!/bin/bash
+      # Export Docker container logs
+      LOGDIR="{{ log_directory }}"
+      DATE=$(date +%Y-%m-%d)
+      
+      # Flask app logs
+      if docker ps | grep -q flask-app; then
+        docker logs flask-app --tail 1000 > "$LOGDIR/flask-app-$DATE.log" 2>&1
+      fi
+      
+      # PostgreSQL logs
+      if docker ps | grep -q postgres; then
+        docker logs postgres --tail 1000 > "$LOGDIR/postgres-$DATE.log" 2>&1
+      fi
+      
+      # Nginx logs
+      if docker ps | grep -q nginx; then
+        docker logs nginx --tail 1000 > "$LOGDIR/nginx-$DATE.log" 2>&1
+      fi
+    mode: '0755'
+
+- name: Create cron job for Docker log export
+  cron:
+    name: "Export Docker container logs"
+    minute: "*/30"
+    job: "/usr/local/bin/docker-logs-export.sh"
+    user: root

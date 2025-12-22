@@ -1,0 +1,30 @@
+---
+# Reference vault variables
+db_password: "{{ vault_db_password }}"
+db_user: "{{ vault_db_user }}"
+db_name: "{{ vault_db_name }}"
+postgres_admin_password: "{{ vault_postgres_admin_password }}"
+
+# Database connection (localhost on VM1)
+db_host: "localhost"
+db_port: 5432
+
+# Application settings (Docker on VM1)
+app_directory: "/opt/flask-app"
+app_port: 5000
+app_docker_image: "kirill4goodmopsa/flask-app"
+
+
+# Flask app host for nginx proxy (VM1)
+flask_app_host: "192.168.1.186"
+
+# Nginx settings (on VM2)
+nginx_http_port: 80
+nginx_https_port: 443
+nginx_server_name: "192.168.1.187"
+nginx_ssl_cert_path: "/etc/nginx/ssl/server.crt"
+nginx_ssl_key_path: "/etc/nginx/ssl/server.key"
+
+# Logging
+log_directory: "/var/log/app"
+log_retention_days: 7

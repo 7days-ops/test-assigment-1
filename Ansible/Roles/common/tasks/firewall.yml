@@ -5,9 +5,9 @@
     state: present
     update_cache: true
 
-- name: Reset UFW (optional clean start)
+- name: Disable UFW before configuration
   ufw:
-    state: reset
+    state: disabled
 
 - name: Deny all incoming, allow all outgoing
   ufw:
@@ -30,11 +30,9 @@
     port: 52
     proto: udp
 
-- name: Allow SSH from trusted local machine (192.168.1.122)
+- name: Allow from everywhere from localmachine 
   ufw:
     rule: allow
-    proto: tcp
-    port: 22
     from_ip: 192.168.1.122
 
 - name: Enable UFW
@@ -45,8 +43,6 @@
   apt:
     name: iptables-persistent
     state: present
-    environment:
-      DEBIAN_FRONTEND: noninteractive
 
 - name: Flush DOCKER-USER chain to avoid duplicates
   iptables:
@@ -61,15 +57,19 @@
     destination_port: 5000
     jump: DROP
 
-- name: Allow access to container port 5000 only from Nginx host (192.168.1.137)
+- name: Allow access to container port 5000 only from Nginx host
   iptables:
     chain: DOCKER-USER
     action: insert
     protocol: tcp
-    source: 192.168.1.137
+    source: 192.168.1.187
     destination_port: 5000
     jump: ACCEPT
 
-- name: Persist iptables rules
-  command: netfilter-persistent save
-  changed_when: false
+- name: Save iptables rules
+  shell: |
+    iptables-save > /etc/iptables/rules.v4
+    ip6tables-save > /etc/iptables/rules.v6
+  args:
+    creates: /etc/iptables/rules.v4
+  when: ansible_os_family == "Debian"
